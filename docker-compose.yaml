@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    
+    # Rodar como root para evitar problemas de permissão
+    user: "root"
+    
+    environment:
+      # URL pública do Grafana
+      - GF_SERVER_ROOT_URL=http://35.174.75.138:3000
+
+      # GITHUB OAUTH
+      - GF_AUTH_GITHUB_ALLOW_SIGN_UP=true   # permite GitHub criar usuário
+      - GF_USERS_ALLOW_SIGN_UP=false        # bloqueia signup normal
+      - GF_USERS_AUTO_ASSIGN_ORG=true
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Editor
+
+      # MFA — pode ativar depois que tudo estiver estável
+      # - GF_SECURITY_ENABLE_MFA=true
+      - GF_SECURITY_MFA_TOKEN_VALIDITY=300
+      - GF_SECURITY_MFA_ENABLED_TOTP=true
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+      # - GF_AUTH_REQUIRE_MFA=true
+
+      # Admin inicial
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_LOG_LEVEL=info
+
+    volumes:
+      # Persistência de dados
+      - grafana-storage:/var/lib/grafana
+
+      # Configurações do Grafana (se existir)
+      - ./grafana.ini:/etc/grafana/grafana.ini:ro
+
+      # Provisionamento
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+
+      # Dashboards JSON
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  grafana-storage:
