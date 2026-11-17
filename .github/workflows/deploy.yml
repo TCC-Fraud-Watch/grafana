@@ -7,31 +7,10 @@ on:
 
   workflow_dispatch:
 
-jobs:
-  validacao-codigo:
-    name: Validação de código
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout the code
-        uses: actions/checkout@v3
-
-      - name: Setup Python e instalar dependências com uv
-        run: |
-          python -m pip install --upgrade uv
-          uv sync --no-dev
-
-      - name: Rodar PEP8 (pycodestyle)
-        run: |
-          echo "🚀 Rodando checagem PEP8 (pycodestyle) — ignorando E501 (linhas longas)..."
-          # ignora a regra E501 (line too long)
-          pycodestyle . --ignore=E501 --exclude=.venv,venv,env || true
-          
-
+jobs:         
   configurar-credenciais:
     name: Configurar credenciais
     runs-on: ubuntu-latest
-    needs: validacao-codigo
     outputs:
       AWS_ACCESS_KEY_ID: ${{ steps.aws_scraping.outputs.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ steps.aws_scraping.outputs.AWS_SECRET_ACCESS_KEY }}
@@ -122,9 +101,9 @@ jobs:
 
       - name: Validar chave SSH existe na AWS
         run: |
-          echo "🔑 Verificando se a chave GRAFANA_KEY existe..."
-          aws ec2 describe-key-pairs --key-names GRAFANA_KEY --region us-east-1
-          echo "✅ Chave GRAFANA_KEY encontrada!"
+          echo "🔑 Verificando se a chave grafana-key existe..."
+          aws ec2 describe-key-pairs --key-names grafana-key --region us-east-1
+          echo "✅ Chave grafana-key encontrada!"
         env:
           AWS_ACCESS_KEY_ID: ${{ needs.validar-credenciais.outputs.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ needs.validar-credenciais.outputs.AWS_SECRET_ACCESS_KEY }}
@@ -140,7 +119,7 @@ jobs:
           aws cloudformation deploy \
             --template-file infra/grafana.yaml \
             --stack-name agrosync-grafana-stack \
-            --parameter-overrides KeyName=GRAFANA_KEY \
+            --parameter-overrides KeyName=grafana-key \
             --region us-east-1 \
             --no-fail-on-empty-changeset
 
