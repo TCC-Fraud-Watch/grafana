@@ -33,11 +33,23 @@ jobs:
       - name: Run AWS scraping script
         id: aws_scraping
         run: |
+          set -euo pipefail
+
           uv run python -u .github/workflows/get_aws_access.py
 
-          AWS_ACCESS_KEY_ID=$(grep AWS_ACCESS_KEY_ID creds.txt | cut -d= -f2 | tr -d '\r\n')
-          AWS_SECRET_ACCESS_KEY=$(grep AWS_SECRET_ACCESS_KEY creds.txt | cut -d= -f2 | tr -d '\r\n')
-          AWS_SESSION_TOKEN=$(grep AWS_SESSION_TOKEN creds.txt | cut -d= -f2 | tr -d '\r\n')
+          if [ ! -f creds.txt ]; then
+            echo "Credenciais não foram gravadas pelo script"
+            exit 1
+          fi
+
+          AWS_ACCESS_KEY_ID=$(awk -F= '/^AWS_ACCESS_KEY_ID=/{print substr($0,index($0,"=")+1); exit}' creds.txt)
+          AWS_SECRET_ACCESS_KEY=$(awk -F= '/^AWS_SECRET_ACCESS_KEY=/{print substr($0,index($0,"=")+1); exit}' creds.txt)
+          AWS_SESSION_TOKEN=$(awk -F= '/^AWS_SESSION_TOKEN=/{print substr($0,index($0,"=")+1); exit}' creds.txt)
+
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_SESSION_TOKEN" ]; then
+            echo "Um ou mais valores AWS estão vazios no arquivo creds.txt"
+            exit 1
+          fi
 
           echo "::add-mask::$AWS_ACCESS_KEY_ID"
           echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
