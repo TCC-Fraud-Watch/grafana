@@ -5,16 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "grafana"
 version = "0.1.0"
-description = "Ferramentas de scraping e deploy para AgroSync"
+description = "Ferramentas de scraping e deploy para fraud watch"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [ { name = "Lucas" } ]
 
 dependencies = [
   "uvicorn[standard] >=0.21.0",
-  "playwright >=1.40.0",
+  "playwright>=1.40.0",
   "pycodestyle>=2.14.0",
-  "dotenv>=0.9.9",
+  "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]

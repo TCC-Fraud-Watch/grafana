@@ -124,3 +124,4 @@ celerybeat-schedule
 # Misc
 __pypackages__/
 *.egg
+screenshots/
