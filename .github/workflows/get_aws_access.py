@@ -1,44 +1,36 @@
-"""
-    AWS Academy Credential Extractor using Playwright
-    This module automates the process of logging into AWS Academy, retrieving AWS credentials,
-    and storing them in a file for use in GitHub workflows or other CI/CD environments.
-    Classes:
-        AWS: Handles browser automation for AWS Academy login and credential retrieval.
-    Functions:
-        set_github_env: Writes AWS credentials to a file for environment variable configuration.
-    Usage:
-        Set EMAIL and PASSWORD environment variables, then run the script to automatically
-        extract and save AWS credentials from AWS Academy.
-"""
+"""Obtém credenciais temporárias da AWS pelo portal AWS Academy.
 
-from playwright.sync_api import sync_playwright
+O fluxo usa Playwright para autenticar no portal, iniciar/verificar a conta
+informada e ler as credenciais temporárias exibidas na página. Ao executar o
+arquivo diretamente, exige as variáveis de ambiente ``EMAIL`` e ``PASSWORD``
+e acrescenta as credenciais coletadas ao arquivo local ``creds.txt``.
 
-import time
+As credenciais e capturas de tela podem conter informações sensíveis. Não
+versione esses arquivos nem publique as capturas geradas pelo script.
+"""
 import logging
+import time
+from playwright.sync_api import sync_playwright
+from dotenv import load_dotenv
+
+load_dotenv()  # Carrega variáveis de ambiente do arquivo .env, se existir
 
 logging.basicConfig(level=logging.INFO)
 
 
 class AWS:
-    """
-    Automates login and credential retrieval from AWS Academy using Playwright.
+    """Automatiza a autenticação e a consulta de credenciais no AWS Academy.
+
     Args:
-        email (str): User email for AWS Academy login.
-        password (str): User password for AWS Academy login.
-        headless (bool, optional): Whether to run browser in headless mode. Defaults to True.
+        email: E-mail usado para autenticação no portal.
+        password: Senha da conta do portal.
+        headless: Se ``True``, executa o Chromium sem janela visível.
+
     Attributes:
-        playwright: Playwright instance.
-        browser: Chromium browser instance.
-        context: Browser context.
-        page: Current browser page.
-        screenshots (str): Directory to save screenshots.
-    Methods:
-        _login(email, password):
-            Logs into AWS Academy portal using provided credentials.
-        configure_aws(conta):
-            Navigates to AWS Academy course, ensures account is active, and retrieves AWS credentials.
-        get_secrets(info_raw: str) -> tuple[str, str, str]:
-            Parses raw credential string and returns AWS access key ID, secret access key, and session token.
+        page: Página Playwright utilizada durante a automação.
+        screenshots: Diretório relativo usado para salvar capturas de tela.
+
+    A inicialização abre o navegador e tenta concluir o login imediatamente.
     """
 
     def __init__(self, email: str, password: str, headless=True):
@@ -51,41 +43,26 @@ class AWS:
         logging.info("[+] Navegador iniciado")
         self._login(email, password)
 
-    def _login(self, email: str, password: str) -> None:
-        """
-        Authenticates a user to AWS Academy platform using provided credentials.
-        This method automates the login process by:
-        1. Navigating to the AWS Academy login page
-        2. Clicking the login button
-        3. Filling in email and password fields
-        4. Submitting the login form
-        5. Waiting for successful authentication confirmation
-        Takes screenshots at each step for debugging purposes.
-        Args:
-            email (str): The user's email address for authentication.
-            password (str): The user's password for authentication.
-        Returns:
-            None
-        Raises:
-            Exception: If login fails due to invalid credentials or if the page layout has changed,
-                        preventing successful authentication within the 15-second timeout.
-        Note:
-            Screenshots are saved to track the login progress and for troubleshooting failed attempts.
-        """
+    def _login(self, email: str, password: str):
+        """Autentica no portal e salva capturas das etapas do login.
 
+        Raises:
+            RuntimeError: Se a URL de login concluído não for alcançada.
+        """
         logging.info("[*] Fazendo login...")
         self.page.goto("https://www.awsacademy.com/vforcesite/LMS_Login")
 
         self.page.click('body > div.splash-body > a:nth-child(1) > button')
         self.page.screenshot(path=f"{self.screenshots}/1-click_start.png")
 
-        self.page.fill("#pseudonym_session_unique_id", email)
-        self.page.fill("#pseudonym_session_password", password)
+        self.page.fill("#username", email)
+        self.page.fill("#password", password)
         self.page.screenshot(path=f"{self.screenshots}/2-send_data.png")
 
         self.page.click(
-            '#login_form > div.ic-Login__actions > div.ic-Form-control.ic-Form-control--login > input'
-        )
+            '#react-router-portals > div > span > span > div > div > main '
+            '> span > div.css-1itq1yq-view > span > form > span > '
+            'span.css-x4jjeu-view--flex-flex > button')
 
         try:
             self.page.wait_for_url(
@@ -93,36 +70,28 @@ class AWS:
             logging.info("[+] Login concluído com sucesso")
             self.page.screenshot(
                 path=f"{self.screenshots}/3-conclude_login.png")
-        except Exception:
+        except Exception as exc:
             logging.error(
                 "[!] Falha no login: credenciais inválidas ou página não carregou corretamente")
             self.page.screenshot(path=f"{self.screenshots}/3-login_error.png")
-            raise Exception(
-                "Login falhou! Verifique suas credenciais ou se o site mudou o layout."
-            )
+            raise RuntimeError(
+                "Login falhou! Verifique suas credenciais ou se o site mudou o layout.") from exc
 
-    def configure_aws(self, conta) -> str:
-        """
-        Configure and retrieve AWS credentials from AWS Academy.
-        This method navigates to the AWS Academy module, verifies the account status,
-        starts the AWS lab environment if needed, and retrieves the AWS credentials.
+    def configure_aws(self, conta: str):
+        """Abre o laboratório da conta e retorna o texto das credenciais.
+
         Args:
-            conta (str): The course ID for AWS Academy.
-        Returns:
-            str: The AWS credentials text content retrieved from the credentials box.
-        Raises:
-            TimeoutError: If any element fails to load within the specified timeout.
-        Process:
-            1. Navigate to the AWS Academy course module
-            2. Check the status of the AWS lab environment
-            3. Launch the AWS lab if not already running (led-green status)
-            4. Click buttons to display AWS credentials
-            5. Extract and return the credentials text
-        """
+            conta: Identificador do curso/conta no AWS Academy.
 
+        Returns:
+            Texto exibido pelo portal contendo as credenciais temporárias.
+
+        A conta é iniciada se o indicador de status não estiver verde. Uma
+        captura de tela é salva em cada etapa principal da consulta.
+        """
         logging.info("[+] Entrando na AWS")
         self.page.goto(
-            f"https://awsacademy.instructure.com/courses/{conta}/modules/items/12498015")
+            f"https://awsacademy.instructure.com/courses/{conta}/modules/items/18151799")
         self.page.wait_for_load_state("domcontentloaded", timeout=0)
         self.page.screenshot(path=f"{self.screenshots}/4-configure_aws.png")
 
@@ -152,23 +121,16 @@ class AWS:
         return text_locator.text_content()
 
     @staticmethod
-    def get_secrets(info_raw: str) -> tuple[str, str, str]:
-        """
-        Extract AWS credentials from a raw information string.
-        Parses a formatted string containing AWS access key ID, secret access key,
-        and session token, and returns them as a tuple.
-        Args:
-            info_raw (str): A raw string containing AWS credentials in the format:
-                           "... aws_access_key_id=<key> aws_secret_access_key=<secret> aws_session_token=<token>"
-        Returns:
-            tuple[str, str, str]: A tuple containing:
-                                 - aws_access_key_id (str): The AWS access key ID
-                                 - aws_secret_access_key (str): The AWS secret access key
-                                 - aws_session_token (str): The AWS session token
-        Raises:
-            IndexError: If the input string does not contain the expected format with at least 4 space-separated values.
-        """
+    def get_secrets(info_raw: str):
+        """Extrai as três credenciais AWS do texto retornado pelo portal.
 
+        Args:
+            info_raw: Texto com as credenciais no formato apresentado pelo
+                AWS Academy.
+
+        Returns:
+            Tupla ``(access_key_id, secret_access_key, session_token)``.
+        """
         info = info_raw.split()
 
         aws_access_key_id = info[1].split('=')[1]
@@ -178,26 +140,13 @@ class AWS:
         return aws_access_key_id, aws_secret_access_key, aws_session_token
 
 
-def set_github_env(aws_access_key_id: str, aws_secret_access_key: str, aws_session_token: str) -> None:
-    """
-    Write AWS credentials to a file for GitHub environment configuration.
-    This function appends AWS access credentials (access key ID, secret access key,
-    and session token) to a 'creds.txt' file in the current directory. These credentials
-    can be used to configure GitHub Actions workflows or other CI/CD environments.
-    Args:
-        aws_access_key_id (str): The AWS access key ID credential.
-        aws_secret_access_key (str): The AWS secret access key credential.
-        aws_session_token (str): The AWS session token credential.
-    Returns:
-        None
-    Note:
-        - Credentials are appended to 'creds.txt' in the current working directory.
-        - Ensure proper file permissions and security measures are in place to protect
-          sensitive credentials.
-        - Consider using environment variables or secure credential management instead
-          of storing credentials in files.
-    """
+def set_github_env(aws_access_key_id: str, aws_secret_access_key: str, aws_session_token: str):
+    """Acrescenta as credenciais ao arquivo local ``creds.txt``.
 
+    Apesar do nome, esta função não configura o ambiente do GitHub Actions;
+    ela apenas grava três atribuições ``CHAVE=valor`` no diretório atual.
+    Proteja o arquivo, pois ele contém credenciais temporárias utilizáveis.
+    """
     with open('creds.txt', 'a') as env_file:
         env_file.write(f"AWS_ACCESS_KEY_ID={aws_access_key_id}\n")
         env_file.write(f"AWS_SECRET_ACCESS_KEY={aws_secret_access_key}\n")
@@ -205,13 +154,14 @@ def set_github_env(aws_access_key_id: str, aws_secret_access_key: str, aws_sessi
 
 
 if __name__ == "__main__":
+    # As variáveis EMAIL e PASSWORD devem ser fornecidas pelo ambiente.
     import os
 
-    EMAIL = os.environ["EMAIL"]
-    SENHA = os.environ["PASSWORD"]
-    CONTA = "130670"
+    email = os.getenv("EMAIL")
+    senha = os.getenv("PASSWORD")
+    CONTA = "183880"
 
-    aws = AWS(EMAIL, SENHA)
+    aws = AWS(email, senha)
     page = aws.page
     try:
         info_raw = aws.configure_aws(CONTA)
@@ -220,12 +170,11 @@ if __name__ == "__main__":
         set_github_env(aws_access_key_id,
                        aws_secret_access_key, aws_session_token)
     except Exception as error:
-        screenshot_dir = "screenshots"
-        os.makedirs(screenshot_dir, exist_ok=True)
+        SCREENSHOT_DIR = "screenshots"
+        os.makedirs(SCREENSHOT_DIR, exist_ok=True)
         timestamp = int(time.time())
         path = os.path.join(
-            screenshot_dir, f"screenshot_error_{timestamp}.png"
-        )
+            SCREENSHOT_DIR, f"screenshot_error_{timestamp}.png")
         page.screenshot(path=path)
-        logging.info(f"Screenshot salvo em: {path}")
-        raise Exception(error)
+        logging.info("Screenshot salvo em: %s", path)
+        raise Exception(error) from error

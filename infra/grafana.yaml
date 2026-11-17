@@ -37,7 +37,7 @@ Resources:
       KeyName: !Ref KeyName
       Tags:
         - Key: Name
-          Value: grafana-server
+          Value: fraudWatch1-sptech-grafana
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
