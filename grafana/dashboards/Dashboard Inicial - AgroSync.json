@@ -294,7 +294,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Dashboard Inicial - AgroSync",
-  "uid": "agrosync-inicial",
+  "title": "Dashboard Inicial - fraud watch",
+  "uid": "fraud-watch-inicial",
   "version": 1
 }

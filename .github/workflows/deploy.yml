@@ -54,9 +54,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: configurar-credenciais
     outputs:
-      aws_access_key_id: ${{ needs.configurar-credenciais.outputs.aws_access_key_id }}
-      aws_secret_access_key: ${{ needs.configurar-credenciais.outputs.aws_secret_access_key }}
-      aws_session_token: ${{ needs.configurar-credenciais.outputs.aws_session_token }}
+      AWS_ACCESS_KEY_ID: ${{ needs.configurar-credenciais.outputs.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ needs.configurar-credenciais.outputs.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ needs.configurar-credenciais.outputs.AWS_SESSION_TOKEN }}
 
     steps:
       - name: Setup Python e instalar awscli com uv
@@ -86,9 +86,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: validar-credenciais
     outputs:
-      aws_access_key_id: ${{ needs.validar-credenciais.outputs.aws_access_key_id }}
-      aws_secret_access_key: ${{ needs.validar-credenciais.outputs.aws_secret_access_key }}
-      aws_session_token: ${{ needs.validar-credenciais.outputs.aws_session_token }}
+      AWS_ACCESS_KEY_ID: ${{ needs.validar-credenciais.outputs.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ needs.validar-credenciais.outputs.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ needs.validar-credenciais.outputs.AWS_SESSION_TOKEN }}
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@v3
@@ -118,7 +118,7 @@ jobs:
           echo "🚀 Criando/Atualizando stack CloudFormation..."
           aws cloudformation deploy \
             --template-file infra/grafana.yaml \
-            --stack-name agrosync-grafana-stack \
+            --stack-name fraud-watch-grafana-stack \
             --parameter-overrides KeyName=grafana-key \
             --region us-east-1 \
             --no-fail-on-empty-changeset
@@ -128,7 +128,7 @@ jobs:
           # Obter URL da instância Grafana
           echo "🔗 Obtendo informações da stack..."
           aws cloudformation describe-stacks \
-            --stack-name agrosync-grafana-stack \
+            --stack-name fraud-watch-grafana-stack \
             --region us-east-1 \
             --query 'Stacks[0].Outputs' \
             --output table
@@ -164,19 +164,26 @@ jobs:
       - name: Obter IP público da EC2 pelo nome
         id: get_ip
         run: |
-          IP=$(aws ec2 describe-instances \
-              --filters "Name=tag:Name,Values=grafana-server" \
-                        "Name=instance-state-name,Values=running" \
-              --query "Reservations[0].Instances[0].PublicIpAddress" \
+          set -euo pipefail
+
+          IP=$(aws cloudformation describe-stacks \
+              --stack-name fraud-watch-grafana-stack \
+              --region us-east-1 \
+              --query "Stacks[0].Outputs[?OutputKey=='InstancePublicIP'].OutputValue" \
               --output text)
+
+          if [ -z "$IP" ] || [ "$IP" = "None" ]; then
+            echo "IP público não encontrado na stack CloudFormation"
+            exit 1
+          fi
 
           echo "EC2_IP=$IP" >> $GITHUB_OUTPUT
           echo "IP encontrado: $IP"
 
         env:
-          AWS_ACCESS_KEY_ID: ${{ needs.deploy-grafana-cloudformation.outputs.aws_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ needs.deploy-grafana-cloudformation.outputs.aws_secret_access_key }}
-          AWS_SESSION_TOKEN: ${{ needs.deploy-grafana-cloudformation.outputs.aws_session_token }}
+          AWS_ACCESS_KEY_ID: ${{ needs.deploy-grafana-cloudformation.outputs.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ needs.deploy-grafana-cloudformation.outputs.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ needs.deploy-grafana-cloudformation.outputs.AWS_SESSION_TOKEN }}
           AWS_DEFAULT_REGION: us-east-1
 
       - name: Atualizar código e reiniciar Docker

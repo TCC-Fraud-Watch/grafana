@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Deploy Grafana with Docker on EC2 - AgroSync
+Description: Deploy Grafana with Docker on EC2 - fraud watch project
 
 Parameters:
   KeyName:
@@ -57,7 +57,7 @@ Resources:
 
           cd /home/ec2-user
 
-          git clone https://github.com/Agro-Sync/grafana.git
+          git clone https://github.com/TCC-Fraud-Watch/grafana.git
           cd grafana
 
           mkdir -p ./data

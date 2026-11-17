@@ -1,6 +1,6 @@
-# 📊 Grafana - AgroSync
+# 📊 Grafana - Fraud Watch
 
-Repositório destinado ao gerenciamento, provisionamento e deploy de dashboards no Grafana para a plataforma AgroSync.
+Repositório destinado ao gerenciamento, provisionamento e deploy de dashboards no Grafana para a plataforma Fraud Watch.
 
 ## 📋 Visão Geral
 
@@ -26,7 +26,7 @@ Este projeto automatiza a criação, validação e deploy de dashboards Grafana 
 
 1. Clone o repositório:
 ```bash
-git clone https://github.com/Agro-Sync/grafana.git
+git clone https://github.com/TCC-Fraud-Watch/grafana.git
 cd grafana
 ```
 
@@ -115,7 +115,7 @@ GRAFANA_ADMIN_PASSWORD=admin
 GF_SECURITY_ADMIN_USER=admin
 
 # Email para notificações
-SMTP_FROM_ADDRESS=noreply@agrosync.com
+SMTP_FROM_ADDRESS=noreply@fraudwatch.com
 ```
 
 ### Secrets do GitHub
@@ -180,12 +180,12 @@ Acionado por **push em `main`** ou manualmente via **workflow_dispatch**.
 
 4. **upload-to-s3**
    - Compacta código com timestamp
-   - Faz upload para S3 (`agrosync-bronze-jupyter/releases/`)
+   - Faz upload para S3 (`sptech-bronze-jupyter/releases/`)
    - Mantém link `latest.zip`
 
 5. **deploy-grafana-cloudformation** ⭐
    - Valida template CloudFormation
-   - Deploy/atualiza stack `agrosync-grafana-stack`
+   - Deploy/atualiza stack `fraud-watch-grafana-stack`
    - Exibe URL da instância Grafana
 
 ### Workflow: Validation
@@ -259,7 +259,7 @@ O deploy é automatizado via GitHub Actions. A stack CloudFormation cria:
 **Acompanhar o deploy:**
 ```bash
 aws cloudformation describe-stacks \
-  --stack-name agrosync-grafana-stack \
+  --stack-name fraud-watch-grafana-stack \
   --region us-east-1 \
   --query 'Stacks[0].Outputs'
 ```
@@ -319,7 +319,7 @@ Para dúvidas ou issues:
 
 ## 📄 Licença
 
-Este projeto é parte da plataforma **AgroSync**. Todos os direitos reservados.
+Este projeto é parte da plataforma **Fraud watch**. Todos os direitos reservados.
 
 ---
 
