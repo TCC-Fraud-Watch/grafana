@@ -193,9 +193,18 @@ jobs:
               ec2-user@${{ steps.get_ip.outputs.EC2_IP }} << 'EOF'
             
             set -e
+
+            if [ ! -d /home/ec2-user/grafana/.git ]; then
+              echo "→ Repositório não encontrado; criando diretório"
+              sudo rm -rf /home/ec2-user/grafana
+              sudo git clone https://github.com/TCC-Fraud-Watch/grafana.git /home/ec2-user/grafana
+              sudo chown -R ec2-user:ec2-user /home/ec2-user/grafana
+            fi
+
             cd /home/ec2-user/grafana
 
             echo "→ Atualizando repositório"
+            git config --global --add safe.directory /home/ec2-user/grafana
             sudo git pull origin main
 
             echo "→ Reiniciando containers"
