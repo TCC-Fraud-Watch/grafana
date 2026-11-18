@@ -7,59 +7,60 @@ on:
 
   workflow_dispatch:
 
-jobs:         
-  configurar-credenciais:
-    name: Configurar credenciais
+permissions:
+  contents: read
+
+jobs:
+  deploy-grafana:
+    name: Deploy Grafana
     runs-on: ubuntu-latest
-    outputs:
-      AWS_ACCESS_KEY_ID: ${{ steps.aws_scraping.outputs.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ steps.aws_scraping.outputs.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ steps.aws_scraping.outputs.AWS_SESSION_TOKEN }}
 
     steps:
-      - name: Checkout the code
-        uses: actions/checkout@v3
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-        
-      - name: Install Playwright
-        run: pip install playwright && playwright install
 
-      - name: Setup Python e instalar dependências com uv
+      - name: Instalar Playwright e dependências Python
         run: |
-          python -m pip install --upgrade uv
+          python -m pip install --upgrade pip uv
           uv sync --no-dev
+          uv run playwright install --with-deps chromium
 
-      - name: Run AWS scraping script
-        id: aws_scraping
-        run: |
-          uv run python -u .github/workflows/get_aws_access.py
-
-          echo "AWS_ACCESS_KEY_ID=$(grep AWS_ACCESS_KEY_ID creds.txt | cut -d= -f2 | tr -d '\r\n')" >> $GITHUB_OUTPUT
-          echo "AWS_SECRET_ACCESS_KEY=$(grep AWS_SECRET_ACCESS_KEY creds.txt | cut -d= -f2 | tr -d '\r\n')" >> $GITHUB_OUTPUT
-          echo "AWS_SESSION_TOKEN=$(grep AWS_SESSION_TOKEN creds.txt | cut -d= -f2 | tr -d '\r\n')" >> $GITHUB_OUTPUT
+      - name: Obter credenciais temporárias da AWS
         env:
           EMAIL: ${{ secrets.EMAIL }}
           PASSWORD: ${{ secrets.PASSWORD }}
+        run: |
+          set -euo pipefail
+          trap 'rm -f creds.txt; rm -rf screenshots' EXIT
 
-      - name: Upload screenshots
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshots
-          path: screenshots/
+          uv run python -u .github/workflows/get_aws_access.py
 
+          AWS_ACCESS_KEY_ID=$(awk -F= '/^AWS_ACCESS_KEY_ID=/{print substr($0,index($0,"=")+1); exit}' creds.txt)
+          AWS_SECRET_ACCESS_KEY=$(awk -F= '/^AWS_SECRET_ACCESS_KEY=/{print substr($0,index($0,"=")+1); exit}' creds.txt)
+          AWS_SESSION_TOKEN=$(awk -F= '/^AWS_SESSION_TOKEN=/{print substr($0,index($0,"=")+1); exit}' creds.txt)
 
-  validar-credenciais:
-    name: Validar credenciais AWS
-    runs-on: ubuntu-latest
-    needs: configurar-credenciais
-    outputs:
-      AWS_ACCESS_KEY_ID: ${{ needs.configurar-credenciais.outputs.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ needs.configurar-credenciais.outputs.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ needs.configurar-credenciais.outputs.AWS_SESSION_TOKEN }}
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_SESSION_TOKEN" ]; then
+            echo "Credenciais AWS incompletas"
+            exit 1
+          fi
 
-    steps:
-      - name: Setup Python e instalar awscli com uv
+          echo "::add-mask::$AWS_ACCESS_KEY_ID"
+          echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
+          echo "::add-mask::$AWS_SESSION_TOKEN"
+
+          {
+            echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
+            echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+            echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN"
+            echo "AWS_DEFAULT_REGION=us-east-1"
+          } >> "$GITHUB_ENV"
+
+          rm -f creds.txt
+          rm -rf screenshots
+
+      - name: Instalar AWS CLI
         run: |
           python -m pip install --upgrade uv
           uv venv
@@ -67,55 +68,11 @@ jobs:
 
       - name: Validar credenciais
         run: |
-          echo "🔍 Validando credenciais AWS..."
-          echo "AWS_ACCESS_KEY_ID: ${#AWS_ACCESS_KEY_ID} caracteres"
-          echo "AWS_SECRET_ACCESS_KEY: ${#AWS_SECRET_ACCESS_KEY} caracteres"
-          echo "AWS_SESSION_TOKEN: ${#AWS_SESSION_TOKEN} caracteres"
-          
           aws sts get-caller-identity
-          aws s3 ls
-          echo "✅ Credenciais válidas!"
-        env:
-          AWS_ACCESS_KEY_ID: ${{ needs.configurar-credenciais.outputs.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ needs.configurar-credenciais.outputs.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ needs.configurar-credenciais.outputs.AWS_SESSION_TOKEN }}
-
-
-  deploy-grafana-cloudformation:
-    name: Deploy Grafana via CloudFormation
-    runs-on: ubuntu-latest
-    needs: validar-credenciais
-    outputs:
-      AWS_ACCESS_KEY_ID: ${{ needs.validar-credenciais.outputs.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ needs.validar-credenciais.outputs.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ needs.validar-credenciais.outputs.AWS_SESSION_TOKEN }}
-    steps:
-      - name: Checkout do repositório
-        uses: actions/checkout@v3
-
-      - name: Setup Python e instalar AWS CLI
-        run: |
-          python -m pip install --upgrade pip uv
-          uv venv
-          uv pip install awscli
-
-      - name: Validar chave SSH existe na AWS
-        run: |
-          echo "🔑 Verificando se a chave grafana-key existe..."
           aws ec2 describe-key-pairs --key-names grafana-key --region us-east-1
-          echo "✅ Chave grafana-key encontrada!"
-        env:
-          AWS_ACCESS_KEY_ID: ${{ needs.validar-credenciais.outputs.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ needs.validar-credenciais.outputs.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ needs.validar-credenciais.outputs.AWS_SESSION_TOKEN }}
-          AWS_DEFAULT_REGION: us-east-1
 
-      - name: Deploy CloudFormation - Grafana
+      - name: Deploy Grafana via CloudFormation
         run: |
-          echo "📦 Validando template CloudFormation..."
-          aws cloudformation validate-template --template-body file://infra/grafana.yaml --region us-east-1
-
-          echo "🚀 Criando/Atualizando stack CloudFormation..."
           aws cloudformation deploy \
             --template-file infra/grafana.yaml \
             --stack-name fraud-watch-grafana-stack \
@@ -123,93 +80,49 @@ jobs:
             --region us-east-1 \
             --no-fail-on-empty-changeset
 
-          echo "✅ Stack CloudFormation deployado com sucesso!"
-
-          # Obter URL da instância Grafana
-          echo "🔗 Obtendo informações da stack..."
-          aws cloudformation describe-stacks \
-            --stack-name fraud-watch-grafana-stack \
-            --region us-east-1 \
-            --query 'Stacks[0].Outputs' \
-            --output table
-        env:
-          AWS_ACCESS_KEY_ID: ${{ needs.validar-credenciais.outputs.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ needs.validar-credenciais.outputs.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ needs.validar-credenciais.outputs.AWS_SESSION_TOKEN }}
-          AWS_DEFAULT_REGION: us-east-1
-
-
-  deploy-update:
-    name: Atualizar código no Grafana (EC2 via SSH)
-    needs: deploy-grafana-cloudformation
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout do repositório
-        uses: actions/checkout@v3
-
-      - name: Instalar SSH Client e AWS CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openssh-client curl unzip
-          python -m pip install --upgrade pip uv
-          uv venv
-          uv pip install awscli
-
-      - name: Restaurar chave PEM
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.GRAFANA_KEY }}" > ~/.ssh/grafana.pem
-          chmod 600 ~/.ssh/grafana.pem
-
-      - name: Obter IP público da EC2 pelo nome
+      - name: Obter IP público da EC2
         id: get_ip
         run: |
           set -euo pipefail
 
           IP=$(aws cloudformation describe-stacks \
-              --stack-name fraud-watch-grafana-stack \
-              --region us-east-1 \
-              --query "Stacks[0].Outputs[?OutputKey=='InstancePublicIP'].OutputValue" \
-              --output text)
+            --stack-name fraud-watch-grafana-stack \
+            --region us-east-1 \
+            --query "Stacks[0].Outputs[?OutputKey=='InstancePublicIP'].OutputValue" \
+            --output text)
 
           if [ -z "$IP" ] || [ "$IP" = "None" ]; then
-            echo "IP público não encontrado na stack CloudFormation"
+            echo "IP público não encontrado"
             exit 1
           fi
 
-          echo "EC2_IP=$IP" >> $GITHUB_OUTPUT
-          echo "IP encontrado: $IP"
+          echo "EC2_IP=$IP" >> "$GITHUB_OUTPUT"
 
-        env:
-          AWS_ACCESS_KEY_ID: ${{ needs.deploy-grafana-cloudformation.outputs.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ needs.deploy-grafana-cloudformation.outputs.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ needs.deploy-grafana-cloudformation.outputs.AWS_SESSION_TOKEN }}
-          AWS_DEFAULT_REGION: us-east-1
+      - name: Restaurar chave PEM
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.GRAFANA_KEY }}" > ~/.ssh/grafana.pem
+          chmod 600 ~/.ssh/grafana.pem
 
       - name: Atualizar código e reiniciar Docker
         run: |
-          ssh -o StrictHostKeyChecking=no \
-              -i ~/.ssh/grafana.pem \
+          ssh-keyscan -H "${{ steps.get_ip.outputs.EC2_IP }}" >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/grafana.pem \
+              -o StrictHostKeyChecking=yes \
               ec2-user@${{ steps.get_ip.outputs.EC2_IP }} << 'EOF'
-            
             set -e
 
             if [ ! -d /home/ec2-user/grafana/.git ]; then
-              echo "→ Repositório não encontrado; criando diretório"
               sudo rm -rf /home/ec2-user/grafana
               sudo git clone https://github.com/TCC-Fraud-Watch/grafana.git /home/ec2-user/grafana
               sudo chown -R ec2-user:ec2-user /home/ec2-user/grafana
             fi
 
             cd /home/ec2-user/grafana
-
-            echo "→ Atualizando repositório"
             git config --global --add safe.directory /home/ec2-user/grafana
             sudo git pull origin main
-
-            echo "→ Reiniciando containers"
+            cd /home/ec2-user/grafana
             sudo docker-compose down || true
             sudo docker-compose up -d --build
-
-            echo "Deploy finalizado!"
           EOF
