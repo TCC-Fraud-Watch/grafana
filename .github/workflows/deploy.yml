@@ -33,7 +33,7 @@ jobs:
           PASSWORD: ${{ secrets.PASSWORD }}
         run: |
           set -euo pipefail
-          trap 'rm -f creds.txt; rm -rf screenshots' EXIT
+          trap 'rm -f creds.txt' EXIT
 
           uv run python -u .github/workflows/get_aws_access.py
 
@@ -58,13 +58,26 @@ jobs:
           } >> "$GITHUB_ENV"
 
           rm -f creds.txt
-          rm -rf screenshots
+
+      - name: Upload screenshots do scraping
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-scraping-screenshots
+          path: |
+            screenshots/1-*.png
+            screenshots/2-*.png
+            screenshots/3-*.png
+            screenshots/4-*.png
+            screenshots/5-*.png
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Instalar AWS CLI
         run: |
           python -m pip install --upgrade uv
-          uv venv
-          uv pip install awscli
+          uv pip install --python .venv/bin/python awscli
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Validar credenciais
         run: |
